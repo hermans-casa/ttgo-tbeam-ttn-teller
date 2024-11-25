@@ -35,6 +35,7 @@ bool ssd1306_found = false;
 bool axp192_found = false;
 
 bool packetSent, packetQueued;
+int teller = 0;
 
 #if defined(PAYLOAD_USE_FULL)
     // includes number of satellites and accuracy
@@ -60,17 +61,7 @@ void buildPacket(uint8_t txBuffer[]);  // needed for platformio
  */
 bool trySend() {
     packetSent = false;
-    // We also wait for altitude being not exactly zero, because the GPS chip generates a bogus 0 alt report when first powered on
-    if (0 < gps_hdop() && gps_hdop() < 50 && gps_latitude() != 0 && gps_longitude() != 0 && gps_altitude() != 0) {
-        char buffer[40];
-        snprintf(buffer, sizeof(buffer), "Latitude: %10.6f\n", gps_latitude());
-        screen_print(buffer);
-        snprintf(buffer, sizeof(buffer), "Longitude: %10.6f\n", gps_longitude());
-        screen_print(buffer);
-        snprintf(buffer, sizeof(buffer), "Error: %4.2fm\n", gps_hdop());
-        screen_print(buffer);
 
-        buildPacket(txBuffer);
 
     #if LORAWAN_CONFIRMED_EVERY > 0
         bool confirmed = (ttn_get_count() % LORAWAN_CONFIRMED_EVERY == 0);
@@ -80,12 +71,11 @@ bool trySend() {
     #endif
 
     packetQueued = true;
+    teller++;
+    txBuffer[0] = teller & 0xFF;
     ttn_send(txBuffer, sizeof(txBuffer), LORAWAN_PORT, confirmed);
     return true;
-    }
-    else {
-        return false;
-    }
+
 }
 
 
@@ -337,25 +327,8 @@ void setup()
 
     if (ssd1306_found) screen_setup();
 
-    // Init GPS
-    gps_setup();
-
-    // Show logo on first boot after removing battery
-    #ifndef ALWAYS_SHOW_LOGO
-    if (bootCount == 0) {
-    #endif
-        screen_print(APP_NAME " " APP_VERSION, 0, 0);
-        screen_show_logo();
-        screen_update();
-        delay(LOGO_DELAY);
-    #ifndef ALWAYS_SHOW_LOGO
-    }
-    #endif
-
     // TTN setup
     if (!ttn_setup()) {
-        screen_print("[ERR] Radio module not found!\n");
-
         if (REQUIRE_RADIO) {
             delay(MESSAGE_TO_SLEEP_DELAY);
             screen_off();
@@ -370,10 +343,7 @@ void setup()
 }
 
 void loop() {
-    gps_loop();
     ttn_loop();
-    screen_loop();
-
     if (packetSent) {
         packetSent = false;
         sleep();
